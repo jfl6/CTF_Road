@@ -1,0 +1,595 @@
+队伍：DAOT
+排名：68/806
+
+MISC
+XGCTF
+先ctfshow 西瓜杯找到了该题
+
+然后带空格搜索，找到博客与内容，最后Ctrl+F搜索该页面源码，找到flag，base64解码即可
+dragonkeep github 
+easy_polluted dragonkeep
+
+flag{1t_I3_t3E_s@Me_ChAl1eNge_aT_a1L_P1e@se_fOrg1ve_Me}
+会飞的雷克萨斯
+直接搜索该事件事发地点即可在新闻报道中得到
+四川省内江市资中县水南镇春岚北路中铁停车场
+继续在地图中搜索得到
+
+根据flag格式得到
+flag{四川省内江市资中县春岚北路中铁城市中心内}
+Greedymen
+告诉AI规则，然后反复调教，自动通关得到flag
+#!/usr/bin/env python3
+from pwn import *
+import re
+import ast
+import time
+
+context.log_level = 'info'
+
+def get_factors(n):
+    """计算 n 的所有因子（不包含 n 自身）"""
+    return [i for i in range(1, n) if n % i == 0]
+
+def choose_best_move(available):
+    """
+    从当前可选集合中挑选最佳数字（贪心策略：收益 = 数字本身 - 可选因子之和）
+    """
+    best_choice = None
+    best_gain = float('-inf')
+    for number in sorted(available, reverse=True):
+        factors = get_factors(number)
+        # 如果该数字的所有因子都已被选，则跳过
+        if all(f not in available for f in factors):
+            continue
+        gain = number - sum(f for f in factors if f in available)
+        if gain > best_gain:
+            best_gain = gain
+            best_choice = number
+    return best_choice
+
+def parse_state(data):
+    """
+    解析服务输出状态，提取最新的 Counter 和 Unassigned Numbers
+    """
+    counter_matches = re.findall(r"Counter:\s*(\d+)", data)
+    counter = int(counter_matches[-1]) if counter_matches else None
+
+    available_matches = re.findall(r"Unassigned Numbers:\s*(\[[^\]]+\])", data)
+    available = None
+    if available_matches:
+        try:
+            available = set(ast.literal_eval(available_matches[-1]))
+        except Exception as e:
+            log.info("解析数字列表失败: " + str(e))
+    return available, counter
+
+def play_level(r, max_number, initial_counter):
+    """
+    自动完成单个关卡：
+    1. 尝试获取当前关卡状态信息
+    2. 按贪心策略选择数字并发送
+    3. 更新局面状态，直到步数耗尽或无可选数字
+    """
+    try:
+        data = r.recvuntil(b"Choose a Number:", timeout=5).decode()
+        log.info("初始关卡信息:\n" + data)
+    except Exception as e:
+        log.info("未收到关卡初始状态，使用默认初始状态: " + str(e))
+        data = ""
+    available, counter = parse_state(data)
+    if available is None:
+        available = set(range(1, max_number + 1))
+    if counter is None:
+        counter = initial_counter
+
+    while counter > 0:
+        best = choose_best_move(available)
+        if best is None:
+            log.info("无可选数字，退出当前关卡循环")
+            break
+
+        log.info("自动选择数字: {}  (剩余步数: {})".format(best, counter))
+        r.sendline(str(best).encode())
+        available.discard(best)
+        for f in get_factors(best):
+            available.discard(f)
+        counter -= 1
+
+        try:
+            data = r.recvuntil(b"Choose a Number:", timeout=3).decode()
+            log.info("更新状态:\n" + data)
+            new_available, new_counter = parse_state(data)
+            if new_available is not None:
+                available = new_available
+            if new_counter is not None:
+                counter = new_counter
+        except EOFError:
+            log.info("连接关闭，当前关卡可能已结束")
+            break
+        except Exception as e:
+            log.info("读取下一个状态失败，可能关卡结束: " + str(e))
+            break
+        time.sleep(0.2)
+
+def wait_for_next_level(r):
+    """
+    等待下一关启动信息：
+    捕获 EOFError 以便在连接关闭时正常退出
+    """
+    log.info("等待新关卡启动信息...")
+    try:
+        data = r.recvuntil(b"Choose a Number:", timeout=10).decode()
+        log.info("新关卡启动信息:\n" + data)
+    except EOFError:
+        log.info("连接关闭，可能所有关卡已完成")
+    except Exception as e:
+        log.info("等待新关卡启动信息失败: " + str(e))
+
+def main():
+    r = remote("47.93.96.189", 28685)
+    banner = r.recvuntil(b"3.Quit").decode()
+    log.info("菜单:\n" + banner)
+    r.sendline(b"1")
+
+    # 各关卡参数：(数字范围最大值, 初始步数)
+    levels = [
+        (50, 19),
+        (100, 37),
+        (200, 76)
+    ]
+    level_index = 1
+
+    for max_num, counter in levels:
+        log.info("进入 Level {}: 数字范围 1~{}，初始步数 {}".format(level_index, max_num, counter))
+        play_level(r, max_num, counter)
+        level_index += 1
+        wait_for_next_level(r)
+
+    log.info("所有关卡结束，进入交互模式。若flag已输出，请查看。")
+    try:
+        r.interactive()
+    except Exception as e:
+        log.info("交互模式异常: " + str(e))
+
+if __name__ == '__main__':
+    main()
+
+output：
+[*] 所有关卡结束，进入交互模式。若flag已输出，请查看。
+[*] Switching to interactive mode
+Your Score: 11353
+Opponent Score: 8747
+You Win!
+Congratulations!, Here's Your Flag flag{Greed, is......key of the life.}
+[*] Got EOF while reading in interactive
+flag{Greed, is......key of the life.}
+曼波曼波曼波
+附件二维码没什么用，smn.txt里面是base64编码，reverse后，再解码，得到jpg，
+再foremost，得到zip和png，压缩包密码XYCTF2025也可根据提示掩码爆破XYCTF????
+，解压得到另看起来一张一样的png，一眼双图盲水印
+
+XYCTF{easy_yin_xie_dfbfu_j877}
+签个到吧
+在每行末尾加入输出和清空语句就行
+
+>+++++++++++++++++[<++++++>-]<.<[-] f
+>++++++++++++[<+++++++++>-]<.<[-] l
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] a
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] g
+>+++++++++++++++++++++++++++++++++++++++++[<+++>-]<.<[-] {
+>+++++++++++++++++++++++++++++[<+++>-]<.<[-] w
+>+++++++++++++++++[<+++>-]<.<[-] 3
+>++++++++++++[<+++++++++>-]<.<[-] l
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] C
+>++++++++[<++++++>-]<.<[-] 0
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] m
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] e
+>+++++++++++++++++++[<+++++>-]<.<[-] _
+>+++++++++++++++++++++++++++++[<++++>-]<.<[-] t
+>++++++++[<++++++>-]<.<[-]0
+>+++++++++++++++++++[<+++++>-]<.<[-] _
+>+++++++++++[<++++++++>-]<.<[-] X
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] Y
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] C
+>++++++++++++[<+++++++>-]<.<[-] T
+>++++++++++[<+++++++>-]<.<[-] F
+>+++++++++++++++++++[<+++++>-]<.<[-] _
+>++++++++++[<+++++>-]<.<[-] 2
+>++++++++[<++++++>-]<.<[-] 0
+>++++++++++[<+++++>-]<.<[-] 2
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++[<+>-]<.<[-] 5
+>+++++++++++++++++++[<+++++>-]<.<[-] _
+>+++++++++++++++++++++++[<+++>-]<.<[-] E
+>+++++++++++[<++++++++++>-]<.<[-] n
+>+++++++++++++++++++++++++++++++++++++++++++++++++++++[<++>-]<.<[-] j
+>++++++++[<++++++>-]<.<[-] 0
+>+++++++++++[<+++++>-]<.<[-] 7
+>+++++++++++++++++++[<+++++>-]<.<[-] _
+>+++++++[<+++++++>-]<.<[-] 1
+>+++++++++++++++++++++++++++++[<++++>-]<.<[-] t
+>+++++++++++[<+++>-]<.<[-] !
+>+++++++++++++++++++++++++[<+++++>-]<.<[-] }
+flag{W3lC0me_t0_XYCTF_2025_Enj07_1t!}
+Crypto
+Complex_signin
+第一次见复数RSA，先开始没看懂，用一元coppersmith一直找不到小根 ，后来发现是复数RSA才知道构造多项式f = a**3 - 3*a*b**2 - c_r，mh泄露，多元coppersmith攻击，恢复m
+exp:
+# sage
+import itertools
+def small_roots(f, bounds, m=1, d=None):
+    if not d:
+        d = f.degree()
+    R = f.base_ring()
+    N = R.cardinality()
+    f /= f.coefficients().pop(0)
+    f = f.change_ring(ZZ)
+    G = Sequence([], f.parent())
+    for i in range(m + 1):
+        base = N ^ (m - i) * f ^ i
+        for shifts in itertools.product(range(d), repeat=f.nvariables()):
+            g = base * prod(map(power, f.variables(), shifts))
+            G.append(g)
+    B, monomials = G.coefficient_matrix()
+    monomials = vector(monomials)
+    factors = [monomial(*bounds) for monomial in monomials]
+    for i, factor in enumerate(factors):
+        B.rescale_col(i, factor)
+    B = B.dense_matrix().LLL()
+    B = B.change_ring(QQ)
+    for i, factor in enumerate(factors):
+        B.rescale_col(i, 1 / factor)
+    H = Sequence([], f.parent().change_ring(QQ))
+    for h in filter(None, B * monomials):
+        H.append(h)
+        I = H.ideal()
+        if I.dimension() == -1:
+            H.pop()
+        elif I.dimension() == 0:
+            roots = []
+            for root in I.variety(ring=ZZ):
+                root = tuple(R(root[var]) for var in f.variables())
+                roots.append(root)
+            return roots
+    return []
+
+if __name__ == '__main__' :
+    n = 24240993137357567658677097076762157882987659874601064738608971893024559525024581362454897599976003248892339463673241756118600994494150721789525924054960470762499808771760690211841936903839232109208099640507210141111314563007924046946402216384360405445595854947145800754365717704762310092558089455516189533635318084532202438477871458797287721022389909953190113597425964395222426700352859740293834121123138183367554858896124509695602915312917886769066254219381427385100688110915129283949340133524365403188753735534290512113201932620106585043122707355381551006014647469884010069878477179147719913280272028376706421104753
+    mh = [3960604425233637243960750976884707892473356737965752732899783806146911898367312949419828751012380013933993271701949681295313483782313836179989146607655230162315784541236731368582965456428944524621026385297377746108440938677401125816586119588080150103855075450874206012903009942468340296995700270449643148025957527925452034647677446705198250167222150181312718642480834399766134519333316989347221448685711220842032010517045985044813674426104295710015607450682205211098779229647334749706043180512861889295899050427257721209370423421046811102682648967375219936664246584194224745761842962418864084904820764122207293014016, 15053801146135239412812153100772352976861411085516247673065559201085791622602365389885455357620354025972053252939439247746724492130435830816513505615952791448705492885525709421224584364037704802923497222819113629874137050874966691886390837364018702981146413066712287361010611405028353728676772998972695270707666289161746024725705731676511793934556785324668045957177856807914741189938780850108643929261692799397326838812262009873072175627051209104209229233754715491428364039564130435227582042666464866336424773552304555244949976525797616679252470574006820212465924134763386213550360175810288209936288398862565142167552]
+    C = [5300743174999795329371527870190100703154639960450575575101738225528814331152637733729613419201898994386548816504858409726318742419169717222702404409496156167283354163362729304279553214510160589336672463972767842604886866159600567533436626931810981418193227593758688610512556391129176234307448758534506432755113432411099690991453452199653214054901093242337700880661006486138424743085527911347931571730473582051987520447237586885119205422668971876488684708196255266536680083835972668749902212285032756286424244284136941767752754078598830317271949981378674176685159516777247305970365843616105513456452993199192823148760, 21112179095014976702043514329117175747825140730885731533311755299178008997398851800028751416090265195760178867626233456642594578588007570838933135396672730765007160135908314028300141127837769297682479678972455077606519053977383739500664851033908924293990399261838079993207621314584108891814038236135637105408310569002463379136544773406496600396931819980400197333039720344346032547489037834427091233045574086625061748398991041014394602237400713218611015436866842699640680804906008370869021545517947588322083793581852529192500912579560094015867120212711242523672548392160514345774299568940390940653232489808850407256752]
+    a_high = mh[0]  
+    b_high = mh[1] 
+    c_r = C[0]     
+    c_i = C[1] 
+    R.<x,y> = Zmod(n)[]
+    a = a_high + x
+    b = b_high + y
+    f = a**3 - 3*a*b**2 - c_r
+    res = small_roots(f, bounds = (2 ^ 128, 2 ^ 128), m=1, d=None)
+    print(res)    
+    m = [mh[0]+res[0][0],mh[1]+res[0][1]]
+    print(m)
+#########################################################
+from Crypto.Cipher import ChaCha20
+import hashlib
+m_re = m[0]
+m_im = m[1]
+encrypted_flag = b'\x9c\xc4n\x8dF\xd9\x9e\xf4\x05\x82!\xde\xfe\x012$\xd0\x8c\xaf\xfb\rEb(\x04)\xa1\xa6\xbaI2J\xd2\xb2\x898\x11\xe6x\xa9\x19\x00pn\xf6rs- \xd2\xd1\xbe\xc7\xf51.\xd4\xd2 \xe7\xc6\xca\xe5\x19\xbe'
+key = hashlib.sha256(str(m_re + m_im).encode()).digest()
+nonce = b'Pr3d1ctmyxjj'
+cipher = ChaCha20.new(key=key, nonce=nonce)
+
+flag = cipher.decrypt(encrypted_flag)
+
+print(f"Decrypted flag: {flag.decode()}")
+output:
+[(200140573956551184845123803212115015633, 62109784561410747979732334460991877433)]
+[3960604425233637243960750976884707892473356737965752732899783806146911898367312949419828751012380013933993271701949681295313483782313836179989146607655230162315784541236731368582965456428944524621026385297377746108440938677401125816586119588080150103855075450874206012903009942468340296995700270449643148025957527925452034647677446705198250167222150181312718642480834399766134519333316989347221448685711220842032010517045985044813674426104295710015607450682205211098779229647334749706043180512861889295899050427257721209370423421046811102682648967375219936664246584194224745762043102992820636089665887925419408029649, 15053801146135239412812153100772352976861411085516247673065559201085791622602365389885455357620354025972053252939439247746724492130435830816513505615952791448705492885525709421224584364037704802923497222819113629874137050874966691886390837364018702981146413066712287361010611405028353728676772998972695270707666289161746024725705731676511793934556785324668045957177856807914741189938780850108643929261692799397326838812262009873072175627051209104209229233754715491428364039564130435227582042666464866336424773552304555244949976525797616679252470574006820212465924134763386213550422285594849620684268131197026134044985]
+Decrypted flag: XYCTF{Welcome_to_XYCTF_Now_let_us_together_play_Crypto_challenge}
+XYCTF{Welcome_to_XYCTF_Now_let_us_together_play_Crypto_challenge}
+Division
+ 利用成熟的 mt19937predictor 库（https://github.com/kmyk/mersenne-twister-predictor）实现对random.getrandbits漏洞攻击
+exp：
+from pwn import remote, log, context
+import re
+from mt19937predictor import MT19937Predictor
+import time
+def collect_outputs(r, predictor, count=624):
+    """
+    选择菜单 1，输入非 0 的除数（这里用 1），收集返回的 32 位随机数，
+    并将每次得到的随机数提交给预测器恢复状态。
+    """
+    outputs = []
+    for i in range(count):
+        r.sendline(b'1')
+        r.recvuntil(b'input the denominator: >>> ')
+        r.sendline(b'1')  # 输入1作为除数，确保不会触发除0异常
+        line = r.recvline().decode().strip()
+        # 输出格式类似 "1932366101//1 = 1932366101"
+        m = re.match(r'(\d+)//1 = \d+', line)
+        if m:
+            num = int(m.group(1))
+            outputs.append(num)
+            # 提交32位随机数到预测器中
+            predictor.setrandbits(num, 32)
+            log.info("Collected {}/{}: {}".format(i + 1, count, num))
+        else:
+            log.error("Unexpected output: " + line)
+            break
+    return outputs
+
+
+def predict_answer(predictor):
+    """
+    利用恢复的状态，预测调用 random.getrandbits(11000) 和 getrandbits(10000) 的输出，
+    并计算正确答案：rand1 // rand2。
+    """
+    rand1 = predictor.getrandbits(11000)
+    rand2 = predictor.getrandbits(10000)
+    if rand2 == 0:
+        raise Exception("Predicted second random number is zero, please recollect state")
+    return rand1 // rand2
+
+
+def recv_all_data(r, timeout=2):
+    """
+    使用超时循环接收所有数据，防止阻塞。
+    """
+    data = b""
+    while True:
+        chunk = r.recv(timeout=timeout)
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+if __name__ == '__main__':
+    context.log_level = 'info'
+    # 连接到目标服务
+    r = remote("47.94.217.82", 28725)
+    # 等待显示菜单
+    r.recvuntil(b"menu:")
+
+    # 初始化 MT19937 预测器
+    predictor = MT19937Predictor()
+    # 收集 624 次选项1的输出
+    collect_outputs(r, predictor, 624)
+
+    # 使用恢复后的状态预测选项2答案
+    answer = predict_answer(predictor)
+    log.info("Predicted answer: {}".format(answer))
+
+    # 选择菜单 2 提交答案
+    r.sendline(b'2')
+    r.recvuntil(b'input the answer: >>> ')
+    r.sendline(str(answer).encode())
+
+    # 改用循环接收数据
+    final_data = recv_all_data(r, timeout=2)
+    log.info("Received data:\n{}".format(final_data.decode(errors='replace')))
+    r.close()
+
+output：
+[*] Predicted answer: 8363052495434698063820277410158013713981811956152430165986830597880291633443857479912428620175637579740710330401486581823114544011349776382218358983185682173625801620503885214849586927000714076066651421562356023813170186444721025802226177377693930637501747618859752784385804898959159036899767700253036
+[*] Received data:
+    WOW
+    Here is your flag: XYCTF{4c781ec4-1223-4992-8739-1da9f920f76d}
+XYCTF{4c781ec4-1223-4992-8739-1da9f920f76d}
+勒索病毒
+解包exe，得到pub_key.txt和enc.txt，反编译task.pyc得到加密脚本，sm4加密，借助ai写出解密脚本
+import re
+import binascii
+from gmssl import sm4
+from Crypto.Util.Padding import unpad
+
+# 给出的加密 flag（十六进制字符串）
+FLAG_HEX = "bf0cb5cc6bea6146e9c1f109df953a57daa416d38a8ffba6438e7e599613e01f3b9a53dace4ccd55cd3e55ef88e0b835"
+
+# 给出的私钥多项式（priv_key.txt 内容）
+PRIV_KEY_POLY = ("-x^48 - x^46 + x^45 + x^43 - x^42 + x^41 + x^40 + x^36 - x^35 + x^34 - x^33 + x^32 - x^30 + "
+                 "x^29 - x^28 - x^27 - x^26 - x^25 - x^23 - x^22 + x^21 + x^20 + x^19 + x^18 - x^17 - x^16 - "
+                 "x^15 - x^14 - x^12 + x^9 - x^7 - x^6 - x^5 - x^4 + x^3 - x + 1")
+
+def parse_poly(poly_str):
+    """
+    解析多项式字符串，提取每项的“值”
+    对于形如 ±x^n 或 ±x 的项，返回系数乘以指数（例如 '+x^45' 返回 45，'-x^48' 返回 -48）
+    对于常数项（例如 '1'），这里按原生成逻辑附加两个 0（常数不会设置比特）。
+    """
+    poly_str = poly_str.replace(" ", "")
+    # 正则模式：匹配形如 ±x^n 或 ±x，或纯数字项
+    pattern = r'([+-]?x(?:\^(\d+))?)|([+-]?\d+)'
+    tokens = re.findall(pattern, poly_str)
+    result = []
+    for token in tokens:
+        if token[0]:  # 匹配到 x 项
+            term = token[0]
+            if '^' in term:
+                coeff_part, exp_str = term.split('x^')
+                exp = int(exp_str)
+                if coeff_part == '' or coeff_part == '+':
+                    coeff = 1
+                elif coeff_part == '-':
+                    coeff = -1
+                else:
+                    coeff = int(coeff_part)
+            else:
+                # 形如 'x' 或 '-x'
+                coeff_part = term.split('x')[0]
+                exp = 1
+                if coeff_part == '' or coeff_part == '+':
+                    coeff = 1
+                elif coeff_part == '-':
+                    coeff = -1
+                else:
+                    coeff = int(coeff_part)
+            result.append(coeff * exp)
+        elif token[2]:
+            # 常数项
+            # 根据原脚本，对于常数 '1'（或 '+1'）添加两个0
+            if token[2] in ['1', '+1']:
+                result.append(0)
+                result.append(0)
+            else:
+                # 其他数字项直接添加
+                result.append(int(token[2]))
+    return result
+
+def gen_sm4_key(terms_list):
+    """
+    根据多项式项生成 SM4 密钥：
+    初始化 128 位二进制串，全 0；
+    对于每个正数项 t（且 t<=127），置 bit[127-t] 为 1；
+    将二进制串转换为 32 位十六进制字符串。
+    """
+    binary = [0] * 128
+    for t in terms_list:
+        if t > 0 and abs(t) <= 127:
+            binary[127 - t] = 1
+    binary_str = ''.join(map(str, binary))
+    hex_key = hex(int(binary_str, 2))[2:].upper().zfill(32)
+    return hex_key
+
+def sm4_decrypt(key_bytes, ciphertext):
+    """
+    使用 SM4 逆 ECB 模式解密数据，并去除 PKCS#7 填充
+    """
+    cipher = sm4.CryptSM4()
+    cipher.set_key(key_bytes, sm4.SM4_DECRYPT)
+    plaintext_padded = cipher.crypt_ecb(ciphertext)
+    plaintext = unpad(plaintext_padded, 16)
+    return plaintext
+
+def main():
+    # 解析私钥多项式，生成对应的 SM4 密钥
+    poly_terms = parse_poly(PRIV_KEY_POLY)
+    hex_key = gen_sm4_key(poly_terms)
+    print("[*] 生成的 SM4 十六进制密钥:", hex_key)
+    key_bytes = bytes.fromhex(hex_key)
+    
+    # 将 flag 的十六进制密文转换为字节串
+    flag_bytes = binascii.unhexlify(FLAG_HEX)
+    try:
+        flag = sm4_decrypt(key_bytes, flag_bytes)
+        print("[+] 解密得到 flag:", flag.decode())
+    except Exception as e:
+        print("[-] 解密失败:", e)
+
+if __name__ == "__main__":
+    main()
+
+E:\Users\20497Downloads\新勒索病毒NTRU>python exp.txt
+[*] 生成的 SM4 十六进制密钥: 000000000000000000002B15203C0208
+[+] 解密得到 flag: XYCTF{Crypto0_can_n0t_So1ve_it}
+XYCTF{Crypto0_can_n0t_So1ve_it}
+Reverse
+WARWUP
+下载附件发现是vbs逆向，之前没做过，上网查阅了一下，发现将前面的Execute改成 wscript.echo之后就可以直接阅读源代码了
+
+源代码如图：
+
+分析一下是rc4加密，将wefbuwiue的密文和qwfe的密钥复制下来，塞进解密工具中
+
+flag{We1c0me_t0_XYCTF_2025_reverse_ch@lleng3_by_th3_w@y_p3cd0wn's_chall_is_r3@lly_gr3@t_&_fuN!}
+Dragon
+下载附件是一个.bc的中间文件。需要将bc编译成o文件，再塞进ida中分析
+llc -filetype=obj Dragon.bc -o Dragon.o
+
+
+由这张图可以判断加密函数和密文大致逻辑：程序里定义了一个v7数组，里面复制了数据unk_370，大小是0x60，也就是96字节。然后输入一个字符串到Str，长度最多是0x42，也就是66个字符。接下来，程序进入一个循环，每次处理两个字符，计算它们的CRC64值，然后和v7数组中的对应元素比较。如果所有比较都通过，就输出成功
+进入calculate_crc64_direct中
+可以看到CRC64计算函数
+
+进入unk_370提取每个QWORD的字节，
+并按小端序转换为整数用python写脚本实现calculate_crc64_direct函数，针对每个目标CRC64值，枚举所有可能的双字符组合，找到匹配的组合。
+脚本如下
+import itertools
+
+def calculate_crc64_direct(data):
+    v3 = 0xFFFFFFFFFFFFFFFF
+    mask = 0xFFFFFFFFFFFFFFFF
+    poly = 0x42F0E1EBA9EA3693
+    for byte in data:
+        v3 ^= (byte << 56) & mask
+        for _ in range(8):
+            if v3 & 0x8000000000000000:
+                v3 = ((v3 << 1) ^ poly) & mask
+            else:
+                v3 = (v3 << 1) & mask
+    return (~v3) & mask
+
+# 目标CRC64值列表（小端转换后的整数）
+targets = [
+    0xDC63E34E419F7B47, 0x031EF8D4E7B2BFC6, 0x12D62FBC625FD89E,
+    0x83E8B6E1CC5755E8, 0xFC7BB1EB2AB665CC, 0x9382CA1B2A62D96B,
+    0xB1FFF8A07673C387, 0x0DA81627388E05E1, 0x9EF1E61AE8D0AAB7,
+    0x92783FD2E7F26145, 0x63C97CA1F56FE60B, 0x9BD3A8B043B73AAB
+]
+
+# 预计算所有可能的双字符组合及其CRC64值
+crc_map = {}
+for b1, b2 in itertools.product(range(256), repeat=2):
+    data = bytes([b1, b2])
+    crc = calculate_crc64_direct(data)
+    crc_map[crc] = data
+
+# 查找每个目标值对应的双字符
+flag = []
+for target in targets:
+    pair = crc_map.get(target)
+    if pair:
+        flag.append(pair.decode('latin-1'))
+    else:
+        flag.append('??')
+        print(f"未找到对应字符的CRC64值: {hex(target)}")
+
+print("Flag:", ''.join(flag))
+flag{LLVM_1s_Fun_Ri9h7?}
+Web
+ez_puzzle
+Cttrl+U查看源码，看到js，puzzle.js丢给AI，可直接注入执行js代码实现拼图
+imageIndexForPosition = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+refreshImagePositions();
+由于快捷键被禁用，借助AI写个自动快速注入的脚本
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+
+target_url = "http://eci-2zed5lh9agi1ij5bc8cp.cloudeci1.ichunqiu.com/"
+javascript_code = """
+imageIndexForPosition = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+refreshImagePositions();
+"""
+
+try:
+
+    chrome_options = webdriver.ChromeOptions()
+
+    # 使用 WebDriverManager 自动管理 ChromeDriver
+    service = ChromeService(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    # 设置页面加载超时时间（可选）
+    driver.set_page_load_timeout(5)
+
+    # 导航到目标 URL
+    driver.get(target_url)
+
+    # 等待最多 2 秒
+    driver.implicitly_wait(2)
+
+    # 执行 JavaScript 代码
+    driver.execute_script(javascript_code)
+
+    time.sleep(100)
+
+except Exception as e:
+    print(f"发生错误: {e}")
+finally:
+    if 'driver' in locals() and driver:
+        driver.quit()
+该代码需注入完成后，快速双击图片实现刷新，就可以弹出flag
+
+flag{Y0u__aRe_a_mAsteR_of_PUzZL!!@!!~!}
